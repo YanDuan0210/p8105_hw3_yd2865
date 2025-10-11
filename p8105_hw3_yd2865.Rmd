@@ -242,7 +242,8 @@ zori_2023_sum =
   zori_2023 |>
   group_by(borough, zipcode) |>
   summarise(
-    mean_rent = mean(zori, na.rm = TRUE), .groups = "drop")
+    mean_rent = mean(zori, na.rm = TRUE), .groups = "drop") |> 
+  filter(!is.na(mean_rent))
 
 # Make a plot
 rental_2023_plot = 
@@ -271,5 +272,12 @@ combine_plot = (rental_plot / rental_2023_plot)
 if(!dir.exists("results")) dir.create("results")
 ggsave("results/combined_plot.png", combine_plot,
        width = 12, height = 10, dpi = 300)
+```
+
+## Problem 3
+
+#### (a)
+```{r}
+
 ```
 
