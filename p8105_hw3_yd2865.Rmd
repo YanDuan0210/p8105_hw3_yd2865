@@ -1,0 +1,128 @@
+---
+title: "p8105_hw3_yd2865"
+author: "Yan Duan"
+date: "2025-10-10"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.width = 6, fig.asp = .6, out.width = "90%")
+library(tidyverse)
+library(ggplot2)
+library(p8105.datasets)
+theme_set(theme_minimal() + theme(legend.position = "bottom"))
+
+options(
+  ggplot2.continuous.colour = "viridis",
+  ggplot2.continuous.fill = "viridis"
+)
+
+scale_colour_discrete = scale_colour_viridis_d
+scale_fill_discrete = scale_fill_viridis_d
+```
+
+
+I'm an R Markdown document! 
+
+## Problem 1
+
+```{r}
+# View the data structure and overview
+
+data("instacart")
+instacart 
+```
+
+The "Instacart" dataset contains real shopping order information from Instacart Online Grocery Shopping.
+The dataset consists of **1,384,617** rows and **15** columns.
+
+Key variables include: `order_id`: order identifier,
+`product_id`: product identifier,
+`add_to_cart_order`: order in which each product was added to cart,
+`reordered`: 1 if this prodcut has been ordered by this user in the past, 0 otherwise,
+`user_id`: customer identifier,
+`eval_set`: which evaluation set this order belongs in (Note that the data for use in this class is exclusively from the “train” `eval_set`),
+`order_number`: the order sequence number for this user (1=first, n=nth),
+`order_dow`: the day of the week on which the order was placed,
+`order_hour_of_day`: the hour of the day on which the order was placed,
+`days_since_prior_order`: days since the last order, capped at 30, NA if `order_number`=1,
+`product_name`: name of the product,
+`aisle_id`: aisle identifier,
+`department_id`: department identifier,
+`aisle`: the name of the aisle,
+`department`: the name of the department.
+
+
+
+
+#### (1)
+
+Calculate the number of aisles and determine the aisles with the highest order volume.
+
+```{r}
+aisle_df =
+  instacart |> 
+  group_by(aisle) |>             
+  summarise(n_items = n()) |>   
+  arrange(desc(n_items))         # Sort in descending order by quantity
+n_aisles = nrow(aisle_df)   # The total number of aisles
+n_aisles 
+head(aisle_df)    # The aisles with the highest number of orders
+```
+
+#### (b)
+
+Make a plot that shows the number of items ordered in each aisle.(items > 10000)
+
+```{r}
+aisle_df |> 
+  filter(n_items > 10000) |>     # Only keep the aisles with an order quantity greater than 10,000
+  mutate(aisle = fct_reorder(aisle, n_items)) |>  # Sort by quantity
+  ggplot(aes(x = aisle, y = n_items)) +
+  geom_col(fill = "blue") +
+  coord_flip() +                 # Reverse the axes
+  labs(
+    title = "Number of items ordered in each aisle (>10,000)",
+    x = "Aisle",
+    y = "Number of items ordered"
+  ) 
+```
+
+#### (c) 
+
+Make a table showing the three most popular items in three aisles.
+
+```{r}
+popular_df = 
+  instacart |> 
+  filter(aisle %in% c("baking ingredients", 
+                      "dog food care", 
+                      "packaged vegetables fruits")) |> 
+  group_by(aisle, product_name) |>
+  summarise(n_orders = n()) |>
+  arrange(aisle, desc(n_orders)) |>
+  slice_head(n = 3)              # The three most popular products
+
+popular_df
+```
+
+#### (d)
+
+Make a table showing the mean hour of the day at which Pink Lady Apples and Coffee Ice Cream are ordered on each day of the week.
+
+```{r}
+mean_hour_df =
+  instacart |>
+  filter(product_name %in% c("Pink Lady Apples", "Coffee Ice Cream")) |>
+  mutate(order_dow = factor(order_dow,   #Convert numbers into text labels
+  levels = 0:6,
+  labels = c("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"))) |>  #Sort by week order
+  group_by(product_name, order_dow) |>
+  summarise(mean_hour = mean(order_hour_of_day)) |>
+  pivot_wider(
+    names_from = order_dow,
+    values_from = mean_hour)
+mean_hour_df
+```
+
+
