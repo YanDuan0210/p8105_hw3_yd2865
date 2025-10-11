@@ -6,10 +6,13 @@ output: github_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, fig.width = 6, fig.asp = .6, out.width = "90%")
+knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(ggplot2)
+library(patchwork)
 library(p8105.datasets)
+library(lubridate)
+
 theme_set(theme_minimal() + theme(legend.position = "bottom"))
 
 options(
@@ -28,7 +31,6 @@ I'm an R Markdown document!
 
 ```{r}
 # View the data structure and overview
-
 data("instacart")
 instacart 
 ```
@@ -69,6 +71,8 @@ n_aisles = nrow(aisle_df)   # The total number of aisles
 n_aisles 
 head(aisle_df)    # The aisles with the highest number of orders
 ```
+There are a total of 134 aisles. 
+The most frequently ordered aisles are fresh vegetables, fresh fruits, and packaged vegetables fruits.
 
 #### (b)
 
@@ -79,7 +83,7 @@ aisle_df |>
   filter(n_items > 10000) |>     # Only keep the aisles with an order quantity greater than 10,000
   mutate(aisle = fct_reorder(aisle, n_items)) |>  # Sort by quantity
   ggplot(aes(x = aisle, y = n_items)) +
-  geom_col(fill = "blue") +
+  geom_col() +
   coord_flip() +                 # Reverse the axes
   labs(
     title = "Number of items ordered in each aisle (>10,000)",
@@ -118,11 +122,154 @@ mean_hour_df =
   levels = 0:6,
   labels = c("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"))) |>  #Sort by week order
   group_by(product_name, order_dow) |>
-  summarise(mean_hour = mean(order_hour_of_day)) |>
+  summarise(mean_hour = mean(order_hour_of_day), .groups = "drop") |>
   pivot_wider(
     names_from = order_dow,
     values_from = mean_hour)
 mean_hour_df
 ```
 
+
+## Problem 2
+
+```{r}
+# Read, tidy and clean the Zillow data
+zori_df = 
+  read_csv("./zillow_data/Zip_zori_uc_sfrcondomfr_sm_month_NYC.csv", na = c("NA", ".", "")) |> 
+  janitor::clean_names() |> 
+  rename(zipcode = region_name) |> 
+  mutate(
+    county_name = str_replace(county_name, "county", ""),
+    zipcode = as.integer(zipcode)) |>
+  pivot_longer(       # Arrange the date data into a single column
+    cols = 10:125,              
+    names_to  = "date",
+    values_to = "zori",
+    names_prefix = "x") |> 
+  mutate(
+    date = ymd(date),                     # 转换为日期
+    year = year(date)
+  )
+
+# Read, tidy and clean the data in Zip Codes data
+zip_df = 
+  read_csv("./zillow_data/Zip Codes.csv", na = c("NA", ".", "")) |>
+  janitor::clean_names() |>
+  mutate(
+    county = recode(county, "New York" = "Manhattan"),
+    zipcode = as.integer(zip_code)) |> 
+  group_by(zipcode) %>%
+  summarise(neighborhood = str_c(sort(unique(neighborhood)), collapse = "; "),
+            borough = first(county))
+  
+
+# Joining datasets
+zori_tidy =
+  left_join(zori_df, zip_df, by = "zipcode") |>
+  filter(!is.na(borough))
+```
+
+
+#### (a)
+```{r}
+# Calculate the number of months in which each ZIP code appears
+zip_obs =
+  zori_tidy |>
+  group_by(zipcode) |>
+  summarise(n_mon = n_distinct(date)) |>
+  ungroup()
+
+# Calculate how many postal codes were observed
+zip_116 = sum(zip_obs$n_mon == 116)
+zip_few = sum(zip_obs$n_mon < 10)
+zip_116
+zip_few
+```
+
+#### (b)
+
+```{r}
+ave_rental =
+  zori_tidy |>
+  group_by(borough, year) |>
+  summarise(mean_rent = mean(zori, na.rm = TRUE), .groups = "drop") |>
+  pivot_wider(
+    names_from = year,
+    values_from = mean_rent) |> 
+  mutate(across(where(is.numeric), ~ format(round(., 2), nsmall = 2))) |>
+  ungroup() 
+
+ave_rental |> 
+  knitr::kable()
+```
+
+The table presents the annual average rents for the five boroughs of New York from 2015 to 2024. The overall trend is a continuous increase, but the growth slowed down around 2020 (due to the impact of the pandemic). Manhattan has always been the most expensive, with an average rent of over $4,000 in 2024, Kings (Brooklyn) follows, Queens and the Bronx are relatively lower, with Richmond (Staten Island) being the lowest, but it has also seen a significant increase since 2020. The rent disparities among different districts have persisted for a long time, and they have generally been increasing at an inflationary rate.
+
+#### (c)
+
+```{r}
+rental_plot =
+  zori_tidy |>
+  mutate(year = as.numeric(year)) |> 
+  group_by(zipcode, borough, year) |>
+  summarise(mean_rent = mean(zori, na.rm = TRUE), .groups = "drop") |>
+  ggplot(aes(x = year, y = mean_rent)) +
+  geom_line(aes(group = zipcode), alpha = 0.2, na.rm = TRUE) +
+  geom_line(stat = "summary", fun = median, color = "black", linewidth = 1, na.rm = TRUE) +
+  facet_wrap(~ borough) +
+  labs(
+    title = "NYC Rental Prices within ZIP codes(2015 - 2024)",
+    x = "Year",
+    y = "Rent Price (USD)")
+rental_plot
+```
+
+This plot presents the rental prices of ZIP areas in New York City from 2015 to 2024. Each gray line represents the rental trend within a ZIP area, while the black lines indicate the median rental prices of each administrative district.
+
+Overall, the rental prices in all administrative districts are on the rise, but with different growth rates. Throughout the period, the median rental price in Manhattan has always been the highest, followed by Kings (Brooklyn) and Queens. The rents in Bronx and Richmond (Staten Island) are relatively lower.
+
+Around 2020, a significant pattern emerged. At that time, the rental prices in most administrative districts experienced a brief stabilization or a slight decrease, which might reflect the temporary impact of the COVID-19 pandemic on rental demand. After 2021, the rental prices in all administrative districts continued to rise, while Manhattan showed a significant rebound after the pandemic.
+
+
+#### (d)
+```{r}
+zori_2023 = 
+  zori_tidy |>
+  filter(year == 2023)
+
+# Calculate the average rent for each ZIP code in 2023
+zori_2023_sum = 
+  zori_2023 |>
+  group_by(borough, zipcode) |>
+  summarise(
+    mean_rent = mean(zori, na.rm = TRUE), .groups = "drop")
+
+# Make a plot
+rental_2023_plot = 
+  ggplot(zori_2023_sum, aes(x = borough, y = mean_rent, fill = borough)) +
+  geom_boxplot(alpha = 0.7) +
+  labs(
+    title = "Distribution of Average 2023 Rental Prices by Borough",
+    x = "Borough",
+    y = "Average Monthly Rent (USD)"
+  )
+rental_2023_plot
+```
+
+This box plot presents the distribution of average monthly rents by postal code in each borough of New York City in 2023. Each box represents the interquartile range (IQR) of rents for the corresponding postal code level, and the horizontal line within each box indicates the median value. This plot clearly presents the ranking of rent levels in each district.
+
+The rent levels in Manhattan are the highest and the range is the widest, indicating that this area is the most expensive in terms of housing prices and also reflecting the greatest rent differences between different postal code areas. King (Brooklyn) follows closely behind, with moderate rent levels and significant rent differences, reflecting the diverse community situation in this administrative district. The median rents in Queens and the Bronx are lower, with relatively concentrated rent distributions, meaning greater affordability and smaller differences. Richmond (Staten Island) has the lowest overall rent level and the smallest differences, indicating a relatively stable and unified rental market.
+
+
+#### (e)
+
+```{r}
+# Combine the two previous plots into a single graphic
+combine_plot = (rental_plot / rental_2023_plot)
+
+# Export the image to the "results" folder
+if(!dir.exists("results")) dir.create("results")
+ggsave("results/combined_plot.png", combine_plot,
+       width = 12, height = 10, dpi = 300)
+```
 
