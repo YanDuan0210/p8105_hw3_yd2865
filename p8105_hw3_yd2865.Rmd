@@ -147,7 +147,7 @@ zori_df =
     values_to = "zori",
     names_prefix = "x") |> 
   mutate(
-    date = ymd(date),                     # 转换为日期
+    date = ymd(date),                     # Convert to Date
     year = year(date)
   )
 
@@ -158,7 +158,7 @@ zip_df =
   mutate(
     county = recode(county, "New York" = "Manhattan"),
     zipcode = as.integer(zip_code)) |> 
-  group_by(zipcode) %>%
+  group_by(zipcode) |> 
   summarise(neighborhood = str_c(sort(unique(neighborhood)), collapse = "; "),
             borough = first(county))
   
@@ -182,8 +182,7 @@ zip_obs =
 # Calculate how many postal codes were observed
 zip_116 = sum(zip_obs$n_mon == 116)
 zip_few = sum(zip_obs$n_mon < 10)
-zip_116
-zip_few
+zip_116; zip_few
 ```
 
 #### (b)
@@ -276,8 +275,116 @@ ggsave("results/combined_plot.png", combine_plot,
 
 ## Problem 3
 
-#### (a)
 ```{r}
+# Read, tidy and clean the accelerometer data
+accel_df =
+  read_csv("./nhanes_accel.csv", na = c("NA", ".", "")) |> 
+  janitor::clean_names() |>               
+  pivot_longer(                    # Convert to one line per minute
+    cols = starts_with("min"),
+    names_to = "minute",
+    values_to = "mims") |>     
+  mutate(
+    seqn = as.character(seqn),
+    minute = as.numeric(str_remove(minute, "min")),  # Extract the number of minutes
+    hour = minute / 60)
 
+# Read, tidy and clean the demographic data
+demo_df =
+  read_csv("./nhanes_covar.csv", na = c("NA", ".", ""), skip = 4) |>
+  janitor::clean_names() |>
+  filter(age >= 21) |>            # exclude participants less than 21 years of age
+  drop_na(sex, age, education) |>       
+  mutate(
+    seqn = as.character(seqn),
+    sex = fct_recode(as.factor(sex),
+                     "male"   = "1",
+                     "female" = "2"),
+    education = fct_recode(as.factor(education),
+                           "less than high school" = "1", 
+                           "high school equivalent" = "2", 
+                           "more than high school" = "3"))
+
+# Joining datasets
+accel_tidy =
+  left_join(accel_df, demo_df, by = "seqn")
 ```
 
+
+#### (a)
+```{r}
+# Produce a reader-friendly table for the number of men and women in each education category
+sex_edu_tbl =
+  accel_tidy |>
+  distinct(seqn, sex, education) |>
+  filter(!is.na(education), !is.na(sex)) |>
+  count(education, sex) |>                 
+  pivot_wider(names_from = sex, values_from = n) 
+
+sex_edu_tbl |> 
+  knitr::kable()
+```
+
+```{r}
+# create a visualization of the age distributions for men and women in each education category
+age_edu_plot = 
+  accel_tidy |>
+  distinct(seqn, age, sex, education) |>  
+  filter(!is.na(education)) |>     
+  ggplot(aes(x = age, fill = sex)) +
+  geom_density(alpha = 0.5) +
+  facet_wrap(~ education) +
+  labs(title = "Age Distribution by Education Level and Sex",
+       x = "Age (years)", y = "Density", fill = "Sex")
+age_edu_plot
+```
+
+The table shows the distribution of the number of men and women at different educational levels. Overall, the gender ratio is relatively balanced. In the "less than high school" group, there are 28 men and 29 women, almost equal. In the "high school equivalent" group, there are 36 men and 23 women, with more men. While in the "more than high school" group, the number of men (56) is roughly the same as that of women (59). 
+
+From the age distribution plot, one can further observe the differences among various educational levels. The individuals in the "less than high school" group have a higher average age, and the density is higher in the age range above 50 years old. The age distribution of the "high school equivalent" group is relatively broad, covering a wider age range, while the distribution of the "more than high school" group leans towards younger people, indicating that participants with higher educational attainment are generally younger on average. 
+
+#### (b)
+
+Analyze the total activity level for the entire day.
+
+```{r}
+total_act =
+  accel_tidy |>
+  filter(!is.na(education), !is.na(sex)) |>
+  group_by(seqn, sex, education, age) |>
+  summarise(total_mims = sum(mims, na.rm = TRUE), .groups = "drop") |>
+  ggplot(aes(x = age, y = total_mims, color = sex)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(se = FALSE) +
+  facet_wrap(~ education) +
+  labs(title = "Total Daily Activity vs Age",
+       x = "Age (years)", y = "Total MIMS", color = "Sex")
+total_act
+```
+
+This plot illustrates the trend of total daily activity (Total MIMS) over age, and it is categorized by gender and educational level. In all educational level groups, overall activity generally decreases as age increases. In the "less than high school" group, both men and women's activity levels significantly decline after the age of 40. In the "high school equivalent" group, women have higher activity levels in most age ranges and experience significant fluctuations in middle age. While in the "more than high school" group, both men and women have higher and more stable overall activity levels, but they still show a gradually decreasing trend after the age of 60.
+
+
+#### (c)
+
+Analyze the 24-hour activity patterns under different educational levels and genders.
+
+```{r}
+hourly_act =
+  accel_tidy |>
+  filter(!is.na(education), !is.na(sex)) |> 
+  group_by(hour, sex, education) |>
+  summarise(mean_mims = mean(mims, na.rm = TRUE), .groups = "drop") |>
+  ggplot(aes(x = hour, y = mean_mims, color = sex)) +
+  geom_line(linewidth = 1) +
+  facet_wrap(~ education) +
+  labs(title = "Average 24-hour Activity Pattern by Education Level and Sex",
+       x = "Hour of Day", y = "Average MIMS", color = "Sex")
+hourly_act
+```
+
+This plot illustrates the 24-hour activity patterns under different educational levels and genders.
+
+Overall, both men and women exhibit distinct circadian rhythms. Their activity levels are relatively low during the night (approximately 0:00 - 6:00), increase rapidly after 7 a.m., reach a peak around noon, and then gradually decrease in the afternoon and evening. The average daily activity level (MIMS) of women is slightly higher than that of men throughout the day, and the difference is particularly significant in the "more than high school" group.
+
+From the perspective of educational level, people with higher educational attainment exhibit smoother and more regular daily activity curves, and have a higher overall level of activity.
